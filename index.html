@@ -1,0 +1,1066 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>Rabee's Big Escape</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background: #1a1a2e;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  min-height: 100vh;
+  font-family: 'Microsoft JhengHei', Arial, sans-serif;
+  user-select: none;
+}
+#ui {
+  background: rgba(0,0,0,0.75); color:#fff;
+  padding:7px 24px; border-radius:10px 10px 0 0;
+  display:flex; gap:28px; font-size:17px; font-weight:bold;
+}
+canvas { display:block; border:3px solid #FFD700; box-shadow:0 0 30px rgba(255,215,0,0.3); }
+#hint { color:#aaa; font-size:13px; margin-top:7px; text-align:center; }
+#gameWrap { position:relative; }
+</style>
+</head>
+<body>
+<div id="ui">
+  <span>⭐ 分數: <span id="sc">0</span></span>
+  <span>❤️ 生命: <span id="lv">3</span></span>
+  <span>🌟 金幣: <span id="cn">0/20</span></span>
+  <span>🏁 進度: <span id="pg">0%</span></span>
+</div>
+<div id="gameWrap">
+  <canvas id="c" width="800" height="480"></canvas>
+</div>
+<div id="hint">← → 移動 &nbsp;|&nbsp; Space 跳躍 &nbsp;|&nbsp; 踩嬰兒消滅 &nbsp;|&nbsp; R 重新開始</div>
+
+<script>
+// ══════════════════════════════════════════════════════
+//  Q版冒險 — 橫向卷軸遊戲  主程式
+//  架構：單一 HTML 檔案，Canvas 2D 繪圖，requestAnimationFrame 主迴圈
+// ══════════════════════════════════════════════════════
+
+// 取得 HTML 中的 <canvas> 元素，並建立 2D 繪圖環境
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+// 畫布寬高（固定解析度，不隨視窗縮放）
+const W=800, H=480;
+
+// ── 臉部照片載入 ──
+// 以 Base64 內嵌的方式直接讀取頭像圖片，不依賴外部檔案。
+// 成功載入後存入 faceImg，失敗則 faceImg 保持 null，
+// 繪製角色時若 faceImg 為 null 則改用程式碼繪製預設臉型。
+let faceImg = null;
+(function(){
+  const img = new Image();
+  img.onload = () => { faceImg = img; };   // 載入成功 → 儲存
+  img.onerror = () => { faceImg = null; }; // 載入失敗 → 使用預設繪製臉型
+  img.src = 'data:image/png;base64,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';
+})();
+
+// ── 遊戲基本常數 ──
+// GY      : 地面 Y 座標（像素），角色腳底對齊此線
+// LW      : 關卡總寬度（像素），地圖從 x=0 延伸至 x=LW
+// PW / PH : 主角碰撞箱寬 / 高（像素）
+// GRAV    : 每幀重力加速度（向下累加至 vy）
+// JFORCE  : 跳躍瞬間給予的向上速度（負值 = 向上）
+// SPD     : 左右移動速度（像素/幀）
+// TOTAL_COINS : 地圖上的金幣總數
+const GY=395, LW=3500, PW=30, PH=72;
+const GRAV=0.55, JFORCE=-13.5, SPD=4.3;
+const TOTAL_COINS=20;
+
+// ── 全域遊戲狀態 ──
+// score     : 當前分數（撿金幣+100、踩敵人+200、過關+1000+金幣獎勵）
+// lives     : 剩餘生命數（預設 4，歸零時切換為 gameover）
+// coinsCnt  : 已收集金幣數量
+// gameState : 遊戲狀態字串 'start' | 'playing' | 'win' | 'gameover'
+// camX      : 攝影機（視窗）左緣在世界座標的 x 位置
+let score=0, lives=4, coinsCnt=0, gameState='start', camX=0;
+// keys 物件以「按鍵名稱 → 是否按住」的方式記錄鍵盤狀態，
+// 讓 update() 能在每幀查詢而不依賴事件時序。
+const keys={};
+window.addEventListener('keydown', e=>{
+  keys[e.key]=true;
+  // 阻止方向鍵與空白鍵的預設捲頁行為，避免畫面跳動
+  if(['ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
+  // 非遊戲中按 R / r 重置遊戲
+  if((e.key==='r'||e.key==='R') && gameState!=='playing') resetGame();
+  // 開始畫面按 Enter 正式進入遊戲
+  if(e.key==='Enter' && gameState==='start'){ gameState='playing'; }
+});
+// 放開按鍵時將對應旗標清除
+window.addEventListener('keyup', e=>{ keys[e.key]=false; });
+
+// ── 主角物件 ──
+// mkPlayer() 建立一個全新的主角狀態物件：
+//   x, y        : 碰撞箱左上角世界座標，初始位置在地面左側
+//   vx, vy      : 水平 / 垂直速度（像素/幀）
+//   onGround    : 是否站在地面或平台上（用於判斷能否跳躍）
+//   facing      : 朝向，1 = 朝右，-1 = 朝左（影響繪製翻轉）
+//   wFrame      : 行走動畫幀計數器（驅動腿部擺動 sin 函數）
+//   wTimer      : 行走幀率控制（每 6 幀推進一次 wFrame）
+//   invTimer    : 無敵幀數計時器（受傷後 90 幀內閃爍且免疫傷害）
+let player;
+function mkPlayer(){
+  return { x:80, y:GY-PH, vx:0, vy:0, onGround:false,
+           facing:1, wFrame:0, wTimer:0, invTimer:0 };
+}
+
+// ── 平台陣列 ──
+// 每個平台物件包含：
+//   x, y : 左上角世界座標
+//   w, h : 寬 / 高（像素）
+//   g    : true = 地面（繪製草地+磚塊），false = 空中平台（繪製石磚）
+// 前 6 筆為地面段落（有間隙形成坑洞），後續為跳台。
+const platforms=[
+  {x:0,   y:GY,w:540, h:85,g:true},
+  {x:620, y:GY,w:250, h:85,g:true},
+  {x:970, y:GY,w:350, h:85,g:true},
+  {x:1430,y:GY,w:300, h:85,g:true},
+  {x:1840,y:GY,w:460, h:85,g:true},
+  {x:2420,y:GY,w:1080,h:85,g:true},
+  {x:290, y:305,w:110,h:18,g:false},
+  {x:470, y:248,w:110,h:18,g:false},
+  {x:660, y:308,w:110,h:18,g:false},
+  {x:840, y:248,w:110,h:18,g:false},
+  {x:1010,y:298,w:110,h:18,g:false},
+  {x:1130,y:228,w:110,h:18,g:false},
+  {x:1270,y:308,w:110,h:18,g:false},
+  {x:1470,y:258,w:110,h:18,g:false},
+  {x:1610,y:198,w:110,h:18,g:false},
+  {x:1750,y:285,w:110,h:18,g:false},
+  {x:1910,y:248,w:110,h:18,g:false},
+  {x:2060,y:188,w:110,h:18,g:false},
+  {x:2210,y:278,w:110,h:18,g:false},
+  {x:2510,y:305,w:110,h:18,g:false},
+  {x:2660,y:238,w:110,h:18,g:false},
+  {x:2810,y:285,w:110,h:18,g:false},
+  {x:2970,y:218,w:110,h:18,g:false},
+  {x:3120,y:298,w:110,h:18,g:false},
+];
+
+// ── 金幣定義陣列 ──
+// coinDefs 儲存所有金幣的初始 x, y 位置（世界座標）。
+// 遊戲啟動時由 coinDefs 映射成帶有 got 狀態的金幣物件。
+// 金幣通常放在跳台正上方，鼓勵玩家冒險跳躍。
+const coinDefs=[
+  {x:345,y:272},{x:525,y:215},{x:715,y:275},{x:895,y:215},
+  {x:1065,y:265},{x:1185,y:195},{x:1325,y:275},{x:1525,y:225},
+  {x:1665,y:165},{x:1805,y:252},{x:1965,y:215},{x:2115,y:155},
+  {x:2265,y:245},{x:2565,y:272},{x:2715,y:205},{x:2865,y:252},
+  {x:3025,y:185},{x:3175,y:265},
+  {x:635,y:345},{x:1455,y:345},
+];
+let coins;
+
+// ── 地面嬰兒敵人定義 ──
+// 共 13 隻地面嬰兒，分散在全地圖的 6 段地面上。
+// 每隻嬰兒以 x 座標指定初始位置，y 固定貼地（GY-34）。
+// vx 依索引奇偶決定初始移動方向（±1.3），碰牆或碰平台邊緣反向。
+// w, h : 碰撞箱寬高；alive : 是否存活；ct : 動畫計數器；
+// falling : true 表示從天而降，著地後轉為地面爬行。
+const babyDefs=[
+  // Ground 0-540 (2)
+  150, 420,
+  // Ground 620-870 (1)
+  742,
+  // Ground 970-1320 (2)
+  1075, 1242,
+  // Ground 1430-1730 (1)
+  1548,
+  // Ground 1840-2300 (2)
+  1958, 2148,
+  // Ground 2420-3500 (5)
+  2535, 2702, 2868, 3035, 3285
+].map((x,i)=>({
+  x, y:GY-34, vx:i%2===0?-1.3:1.3, vy:0,
+  w:52, h:34, alive:true, ct:0, falling:false
+}));
+let enemies;
+
+// ── 天降嬰兒機制 ──
+// 每隔約 SKY_INTERVAL（160 幀≈2.7 秒）+ 隨機偏移，
+// 從畫面頂端隨機 x 位置生成一隻「掉落中」的嬰兒（falling:true）。
+// 空中同時存在的天降嬰兒上限為 6 隻，避免畫面過於混亂。
+// 著地後 falling 轉 false，成為普通地面爬行敵人。
+let skyTimer=0;
+const SKY_INTERVAL=160; // 基礎幀間距（~2.7 秒）
+function spawnSkyBaby(){
+  if(enemies.filter(e=>e.alive&&e.falling).length>=6) return; // cap sky babies
+  const x=camX+60+Math.random()*(W-120);
+  enemies.push({
+    x:Math.max(50,Math.min(LW-100,x)),
+    y:-55, vx:Math.random()>0.5?-1.4:1.4,
+    vy:2.5, w:52, h:34, alive:true, ct:0, falling:true
+  });
+}
+
+// ── 粒子特效陣列 ──
+// 每個粒子：x, y（起始位置）、vx/vy（速度）、life（剩餘幀數）、color（顏色）。
+// 撿到金幣產生金色粒子，踩死嬰兒產生粉紅粒子。
+// 每幀粒子受輕微重力（vy+=0.15）下落，life 歸零後移除。
+let particles=[];
+
+// ── 終點圍欄設定 ──
+// 終點區域為一個 200×130 的矩形碰撞箱，位於地圖最右端（x=3300）。
+// 玩家碰觸此區域即觸發過關（win），並依金幣數量給予額外分數。
+// drawGoal() 在此範圍內繪製圍欄、超大粉紅豬與終點旗幟。
+const goal={x:3300,y:GY-130,w:200,h:130};
+
+// ── 背景雲朵定義 ──
+// 16 朵雲，依索引 i 計算初始 x（等間距）與 y（sin 波浪起伏），
+// 寬度在 55~105 px 之間隨機變化，製造遠近層次。
+// 雲朵繪製時使用視差係數 0.22（比地面慢），模擬遠景感。
+const clouds=Array.from({length:16},(_,i)=>({
+  x:i*240+60, y:35+Math.sin(i)*35, w:55+i%3*25
+}));
+
+// ══ 碰撞偵測系統 ══
+
+// aabb()：AABB（軸對齊包圍盒）重疊測試。
+// 傳入兩個矩形的左上座標與寬高，回傳 true 表示有重疊。
+function aabb(ax,ay,aw,ah,bx,by,bw,bh){
+  return ax<bx+bw&&ax+aw>bx&&ay<by+bh&&ay+ah>by;
+}
+
+// resolve()：計算移動物件（px,py,pw,ph）與平台（p）的碰撞深度，
+// 並回傳推出方向物件 {axis, dir}，用於修正位置：
+//   axis='y', dir=-1 → 從上方碰撞（站在平台頂部）
+//   axis='y', dir=+1 → 從下方碰撞（頭頂碰到平台底部）
+//   axis='x', dir=-1 / +1 → 水平碰撞（左/右牆）
+// 若無碰撞則回傳 null。
+function resolve(px,py,pw,ph,p){
+  if(!aabb(px,py,pw,ph,p.x,p.y,p.w,p.h)) return null;
+  const dx1=(px+pw)-p.x, dx2=(p.x+p.w)-px; // 左右穿透深度
+  const dy1=(py+ph)-p.y, dy2=(p.y+p.h)-py; // 上下穿透深度
+  const ox=Math.min(dx1,dx2), oy=Math.min(dy1,dy2);
+  // 選擇穿透深度較小的軸作為推出方向（最短距離推出法）
+  if(oy<ox) return {axis:'y',dir:dy1<dy2?-1:1};
+  return      {axis:'x',dir:dx1<dx2?-1:1};
+}
+
+// ══ 每幀更新邏輯 ══
+// update() 在 gameState==='playing' 時由主迴圈 loop() 每幀呼叫一次。
+function update(){
+  // ── 水平移動輸入 ──
+  // 按左/右箭頭鍵設定速度並更新朝向；放開則摩擦力減速（×0.72/幀）
+  if(keys['ArrowLeft'])  { player.vx=-SPD; player.facing=-1; }
+  else if(keys['ArrowRight']){ player.vx=SPD; player.facing=1; }
+  else player.vx*=0.72; // 自然慣性減速
+
+  // ── 跳躍輸入 ──
+  // 只有站在地面上才能跳（防止二段跳）
+  if(keys[' '] && player.onGround){
+    player.vy=JFORCE; player.onGround=false;
+  }
+
+  // ── 物理積分 ──
+  // 重力每幀累加至 vy，並限制最大落速為 20（終端速度，防止穿越薄平台）
+  player.vy=Math.min(player.vy+GRAV,20);
+  player.x+=player.vx; player.y+=player.vy;
+  // 水平邊界限制：不可超出地圖左右邊緣
+  player.x=Math.max(0,Math.min(player.x,LW-PW));
+
+  // ── 平台碰撞解算 ──
+  // 每幀先假設主角不在地面，再逐一與平台做碰撞推出
+  player.onGround=false;
+  for(const p of platforms){
+    const col=resolve(player.x,player.y,PW,PH,p);
+    if(!col) continue;
+    if(col.axis==='y'){
+      if(col.dir===-1){ player.y=p.y-PH; player.vy=0; player.onGround=true; } // 落在平台頂
+      else            { player.y=p.y+p.h; player.vy=0; }                       // 撞到平台底
+    } else {
+      if(col.dir===-1) player.x=p.x-PW;  // 撞到平台左牆
+      else             player.x=p.x+p.w; // 撞到平台右牆
+      player.vx=0; // 碰壁後速度歸零
+    }
+  }
+
+  // 主角掉出畫面下方（落入坑洞）→ 觸發復活
+  if(player.y>H+60) respawn();
+  // 無敵計時器倒數（>0 時主角閃爍且免疫傷害）
+  if(player.invTimer>0) player.invTimer--;
+
+  // ── 行走動畫計時器 ──
+  // 在地面且有水平速度時，每 6 幀推進一次 wFrame，
+  // wFrame 傳入 sin() 產生腿部擺動效果
+  if(player.onGround&&Math.abs(player.vx)>0.4){
+    if(++player.wTimer>6){ player.wFrame++; player.wTimer=0; }
+  }
+
+  // ── 金幣撿取偵測 ──
+  // 每幀檢查主角（稍微擴大的碰撞框）是否觸碰金幣中心 20×20 的範圍。
+  // 碰到後標記 got=true（不再繪製）、增加分數、產生金色粒子。
+  coins.forEach(c=>{
+    if(c.got) return; // 已撿過則跳過
+    if(aabb(player.x-6,player.y,PW+12,PH,c.x-10,c.y-10,20,20)){
+      c.got=true; coinsCnt++; score+=100;
+      spawnPfx(c.x,c.y,'#FFD700'); updateUI();
+    }
+  });
+
+  // ── 天降嬰兒計時 ──
+  // 每幀累加 skyTimer，達到 160+隨機80 幀後生成一隻天降嬰兒並重置計時器
+  skyTimer++;
+  if(skyTimer >= SKY_INTERVAL + Math.random()*80){
+    skyTimer=0;
+    spawnSkyBaby();
+  }
+
+  // ── 嬰兒敵人更新 ──
+  enemies.forEach(e=>{
+    if(!e.alive) return; // 已死亡跳過
+    e.ct++; // 動畫計數器（用於腿部/手臂擺動的 sin 輸入）
+    // 重力積分，終端速度同樣限制為 20
+    e.vy=Math.min(e.vy+GRAV,20);
+    e.x+=e.vx; e.y+=e.vy;
+    // 與所有平台做碰撞偵測：垂直碰撞→著地，水平碰撞→反向
+    for(const p of platforms){
+      const col=resolve(e.x,e.y,e.w,e.h,p);
+      if(!col) continue;
+      if(col.axis==='y'&&col.dir===-1){
+        e.y=p.y-e.h; e.vy=0;
+        e.falling=false; // 天降嬰兒著地後轉為普通爬行狀態
+      } else if(col.axis==='x') e.vx*=-1; // 碰壁反向
+    }
+    // 地圖左右邊界反向
+    if(e.x<0||e.x+e.w>LW) e.vx*=-1;
+    // 掉出畫面下方（坑洞）→ 標記為死亡
+    if(e.y>H+60) e.alive=false;
+
+    // 無敵期間不受傷害
+    if(player.invTimer>0) return;
+    if(aabb(player.x,player.y,PW,PH,e.x,e.y,e.w,e.h)){
+      // 踩踏判定：主角 vy>0（正在下落）且腳底在嬰兒上半部以上
+      if(player.vy>0 && player.y+PH < e.y+e.h*0.6){
+        e.alive=false; player.vy=-9; score+=200;  // 踩死並反彈
+        spawnPfx(e.x+26,e.y,'#FFB3C1'); updateUI();
+      } else {
+        respawn(); // 其他碰撞方式 → 主角受傷
+      }
+    }
+  });
+
+  // ── 過關判定 ──
+  // 主角碰觸終點圍欄範圍 → 過關，給予 1000 基礎分 + 每枚金幣 50 分
+  if(aabb(player.x,player.y,PW,PH,goal.x,goal.y,goal.w,goal.h)){
+    score+=1000+coinsCnt*50; gameState='win'; updateUI();
+  }
+
+  // ── 粒子更新 ──
+  // 移除 life≤0 的粒子，其餘每幀移動位置並施加輕微重力
+  particles=particles.filter(p=>p.life>0);
+  particles.forEach(p=>{ p.x+=p.vx; p.y+=p.vy; p.vy+=0.15; p.life--; });
+
+  // ── 攝影機跟隨 ──
+  // 攝影機 x 使主角維持在畫面左側 1/3 處，並限制在地圖邊界內
+  camX=Math.max(0,Math.min(player.x-W/3,LW-W));
+  // 更新進度條（主角 x 位置 / 地圖總長，顯示為百分比）
+  document.getElementById('pg').textContent=
+    Math.min(100,Math.round((player.x/LW)*100))+'%';
+}
+
+// spawnPfx()：在 (x, y) 產生 8 顆向四面八方飛散的粒子，
+// 每顆初速方向均勻分布在 360°，存活 28 幀後消失。
+function spawnPfx(x,y,color){
+  for(let i=0;i<8;i++){
+    const a=(i/8)*Math.PI*2; // 均勻角度（弧度）
+    particles.push({x,y,vx:Math.cos(a)*2.5,vy:Math.sin(a)*2.5-2,life:28,color});
+  }
+}
+// respawn()：主角受傷後的復活處理。
+// 先扣除一條命，命數歸零則切換 gameover。
+// 否則將主角重置至起點，並給予 90 幀無敵時間（避免連續受傷）。
+function respawn(){
+  if(--lives<=0){ gameState='gameover'; updateUI(); return; }
+  player.x=80; player.y=GY-PH; player.vx=0; player.vy=0;
+  camX=0; player.invTimer=90; updateUI();
+}
+// updateUI()：同步更新 HTML 頂部 UI 欄的分數、生命、金幣數字。
+// 每次分數/生命/金幣改變後呼叫以保持顯示最新。
+function updateUI(){
+  document.getElementById('sc').textContent=score;
+  document.getElementById('lv').textContent=lives;
+  document.getElementById('cn').textContent=coinsCnt+'/'+TOTAL_COINS;
+}
+
+// ══ 繪圖輔助函數 ══
+
+// rr()：繪製圓角矩形（Rounded Rectangle）並 fill。
+// x, y : 左上角；w, h : 寬高；r : 圓角半徑。
+// 使用 arcTo 在四個角落繪製弧線，避免手動計算貝茲曲線。
+function rr(x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.arcTo(x+w,y,x+w,y+r,r);
+  ctx.lineTo(x+w,y+h-r); ctx.arcTo(x+w,y+h,x+w-r,y+h,r);
+  ctx.lineTo(x+r,y+h); ctx.arcTo(x,y+h,x,y+h-r,r);
+  ctx.lineTo(x,y+r); ctx.arcTo(x,y,x+r,y,r);
+  ctx.closePath(); ctx.fill();
+}
+
+// ── 背景繪製 ──
+// drawBg() 每幀繪製整個背景場景（天空漸層、太陽、遠山、雲朵）。
+// 背景元素使用視差捲動（parallax）：
+//   遠景山脈 × 0.10、次遠山 × 0.18、雲朵 × 0.22
+// 比地面物件（× 1.0）移動慢，製造深度感。
+function drawBg(){
+  // 天空漸層：頂部深藍 → 中段淡藍 → 底部草綠
+  const gr=ctx.createLinearGradient(0,0,0,H);
+  gr.addColorStop(0,'#64B5F6'); gr.addColorStop(0.65,'#B3E5FC'); gr.addColorStop(1,'#DCEDC8');
+  ctx.fillStyle=gr; ctx.fillRect(0,0,W,H);
+  // 太陽：中心黃色圓 + 外圍半透明光暈
+  ctx.fillStyle='#FFEB3B';
+  ctx.beginPath(); ctx.arc(130,85,42,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='rgba(255,235,59,0.2)';
+  ctx.beginPath(); ctx.arc(130,85,62,0,Math.PI*2); ctx.fill();
+  // 遠景淡藍山脈（視差係數 0.10，移動最慢，9 個三角形無縫循環）
+  ctx.fillStyle='#90CAF9';
+  const mo1=-camX*0.1; // 視差偏移量
+  for(let i=0;i<9;i++){
+    const mx=((i*500+mo1)%(W+700))-200; // 循環位置計算
+    ctx.beginPath(); ctx.moveTo(mx,H-60); ctx.lineTo(mx+200,H-310);
+    ctx.lineTo(mx+400,H-60); ctx.closePath(); ctx.fill();
+  }
+  // 次遠景灰藍山脈（視差係數 0.18，10 個三角形）
+  ctx.fillStyle='#B0BEC5';
+  const mo2=-camX*0.18;
+  for(let i=0;i<10;i++){
+    const mx=((i*380+mo2+190)%(W+550))-150;
+    ctx.beginPath(); ctx.moveTo(mx,H-60); ctx.lineTo(mx+150,H-230);
+    ctx.lineTo(mx+300,H-60); ctx.closePath(); ctx.fill();
+  }
+  ctx.fillStyle='rgba(255,255,255,0.9)';
+  clouds.forEach(c=>{
+    const cx=((c.x-camX*0.22)%(W+300)+W+300)%(W+300)-150;
+    drawCloud(cx,c.y,c.w);
+  });
+}
+function drawCloud(x,y,w){
+  ctx.beginPath();
+  ctx.arc(x,y+w*0.3,w*0.42,0,Math.PI*2);
+  ctx.arc(x+w*0.35,y+w*0.15,w*0.35,0,Math.PI*2);
+  ctx.arc(x-w*0.3,y+w*0.25,w*0.3,0,Math.PI*2);
+  ctx.arc(x+w*0.68,y+w*0.28,w*0.27,0,Math.PI*2);
+  ctx.fill();
+}
+
+// ── 平台繪製 ──
+// 地面平台（g:true）：上層綠草皮 + 下層棕色土磚（帶磚縫紋路 + 草叢裝飾）
+// 空中跳台（g:false）：淡棕色石磚 + 白色高光
+function drawPlatforms(){
+  platforms.forEach(p=>{
+    const sx=p.x-camX;
+    // 視錐剔除：不在畫面範圍內的平台直接跳過（提升效能）
+    if(sx>W+10||sx+p.w<-10) return;
+    if(p.g){
+      ctx.fillStyle='#66BB6A'; ctx.fillRect(sx,p.y,p.w,15);
+      ctx.fillStyle='#8D6E63'; ctx.fillRect(sx,p.y+15,p.w,p.h-15);
+      ctx.fillStyle='#795548';
+      for(let i=0;i<p.w;i+=26) ctx.fillRect(sx+i,p.y+22,13,p.h-22);
+      ctx.fillStyle='#81C784';
+      for(let i=8;i<p.w;i+=22){
+        ctx.beginPath(); ctx.arc(sx+i,p.y+7,7,Math.PI,0); ctx.fill();
+      }
+    } else {
+      ctx.fillStyle='#A1887F'; ctx.fillRect(sx,p.y,p.w,p.h);
+      ctx.strokeStyle='#795548'; ctx.lineWidth=1.5;
+      for(let bx=0;bx<p.w;bx+=30) ctx.strokeRect(sx+bx,p.y,30,p.h);
+      ctx.fillStyle='rgba(255,255,255,0.18)'; ctx.fillRect(sx,p.y,p.w,3);
+    }
+  });
+}
+
+// ── 金幣繪製 ──
+// 金幣以橢圓模擬「旋轉硬幣」動畫：
+//   sc2 = |cos(時間 + x偏移)| ，值域 0~1，代表水平壓縮比例。
+//   sc2≈0 時金幣側面（細線），sc2≈1 時正面（完整圓）。
+//   每枚金幣的 x 偏移讓它們不同步旋轉，畫面更生動。
+function drawCoins(){
+  const t=Date.now()*0.006; // 全域時間（秒級）
+  coins.forEach(c=>{
+    if(c.got) return; // 已撿取不繪製
+    const sx=c.x-camX; if(sx<-20||sx>W+20) return; // 視錐剔除
+    const sc2=Math.abs(Math.cos(t+c.x*0.08)); // 旋轉壓縮比
+    ctx.save(); ctx.translate(sx,c.y);
+    ctx.fillStyle='#FFD700'; ctx.beginPath(); ctx.ellipse(0,0,10*sc2,10,0,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#FFA000'; ctx.beginPath(); ctx.ellipse(0,0,6*sc2,6,0,0,Math.PI*2); ctx.fill();
+    if(sc2>0.35){
+      ctx.fillStyle='rgba(255,255,255,0.55)';
+      ctx.beginPath(); ctx.ellipse(-2.5*sc2,-2.5,2*sc2,2,0,0,Math.PI*2); ctx.fill();
+    }
+    ctx.restore();
+  });
+}
+
+// ── 嬰兒敵人繪製 ──
+// drawBaby(e) 繪製單隻嬰兒的完整外觀（Q版卡通風格）：
+//   爬行狀態：腿部/手臂依 sin(ct) 往復擺動
+//   天降狀態：全身旋轉晃動（wobble），頭頂顯示 "wheee!" 文字
+//   元件由後至前繪製（後腿 → 軀幹 → 尿布 → 後手臂 → 前腿 → 前手臂 → 頭部）
+function drawBaby(e){
+  if(!e.alive) return; // 死亡不繪製
+  const sx=e.x-camX; if(sx<-70||sx>W+70) return; // 視錐剔除
+
+  const facingL = e.vx < 0;
+  const bob    = e.falling ? 0 : Math.sin(e.ct*0.14)*2.5;
+  const limbSw = e.falling ? 0 : Math.sin(e.ct*0.14)*5;
+
+  ctx.save();
+
+  if(e.falling){
+    // "wheee!" above baby (drawn before rotation so text stays upright)
+    ctx.save();
+    ctx.font='bold 12px Arial'; ctx.textAlign='center';
+    ctx.fillStyle='#FF5252';
+    ctx.fillText('wheee!', sx+e.w/2, e.y-6);
+    ctx.restore();
+    // wobble rotation around baby center
+    const wobble=Math.sin(e.ct*0.18)*0.38;
+    ctx.translate(sx+e.w/2, e.y+e.h/2);
+    ctx.rotate(wobble);
+    ctx.translate(-sx-e.w/2, -e.y-e.h/2);
+  }
+
+  // origin: bottom-left of hitbox (same for both falling & crawling)
+  ctx.translate(sx, e.y+e.h);
+
+  // flip so baby always faces movement direction
+  if(!facingL){ ctx.scale(-1,1); ctx.translate(-e.w,0); }
+
+  // ── BACK LEG (right side, knee bent) ──
+  ctx.fillStyle='#FAD9B5';
+  ctx.beginPath(); ctx.ellipse(38, -10+limbSw, 9,6, 0.4,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(44, -5+limbSw, 6,0,Math.PI*2); ctx.fill();
+
+  // ── BODY: onesie ──
+  ctx.fillStyle='#FFF5F5';
+  ctx.beginPath(); ctx.ellipse(26, -18+bob, 18,12,0,0,Math.PI*2); ctx.fill();
+
+  // onesie snap buttons at crotch
+  ctx.fillStyle='#ddd';
+  ctx.beginPath(); ctx.arc(24,-8+bob,2.5,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(30,-8+bob,2.5,0,Math.PI*2); ctx.fill();
+
+  // ── DIAPER ──
+  ctx.fillStyle='#E8EAF6';
+  ctx.beginPath(); ctx.ellipse(24,-9+bob,14,9,0.1,0,Math.PI*2); ctx.fill();
+  // diaper waistband
+  ctx.fillStyle='#C5CAE9';
+  ctx.fillRect(12,-17+bob,24,5);
+  // tape tabs
+  ctx.fillStyle='#9FA8DA';
+  ctx.fillRect(10,-18+bob,5,6); ctx.fillRect(33,-18+bob,5,6);
+
+  // ── BACK ARM ──
+  ctx.fillStyle='#FAD9B5';
+  const armUp = e.falling ? 18 : 0; // raise arms when falling
+  ctx.beginPath(); ctx.ellipse(40,-23-limbSw-armUp,8,5,e.falling?-0.8:0.5,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(46,-19-limbSw-armUp,5.5,0,Math.PI*2); ctx.fill();
+
+  // ── FRONT LEG ──
+  ctx.fillStyle='#FAD9B5';
+  ctx.beginPath(); ctx.ellipse(12,-7-limbSw,9,6,-0.3,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(7,-4-limbSw,6,0,Math.PI*2); ctx.fill();
+
+  // ── FRONT ARM ──
+  ctx.beginPath(); ctx.ellipse(8,-20+limbSw-armUp,9,5,e.falling?0.8:-0.5,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(2,-17+limbSw-armUp,6,0,Math.PI*2); ctx.fill();
+
+  // ── BIG BABY HEAD ──
+  const hx=40, hy=-28+bob, hr=17;
+  ctx.fillStyle='#FAD9B5';
+  ctx.beginPath(); ctx.arc(hx,hy,hr,0,Math.PI*2); ctx.fill();
+
+  // baby hair (sparse wisps)
+  ctx.strokeStyle='#8B6850'; ctx.lineWidth=1.8;
+  ctx.beginPath(); ctx.moveTo(hx-5,hy-hr); ctx.quadraticCurveTo(hx-8,hy-hr-7,hx-5,hy-hr-10); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(hx,hy-hr);   ctx.quadraticCurveTo(hx+2,hy-hr-9,hx,hy-hr-12);   ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(hx+5,hy-hr); ctx.quadraticCurveTo(hx+8,hy-hr-6,hx+6,hy-hr-9);  ctx.stroke();
+
+  // baby eyes (big and innocent)
+  ctx.fillStyle='#2A1A0A';
+  ctx.beginPath(); ctx.ellipse(hx-7,hy-2,5,5.5,0,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(hx+7,hy-2,5,5.5,0,0,Math.PI*2); ctx.fill();
+  // eye shine
+  ctx.fillStyle='white';
+  ctx.beginPath(); ctx.arc(hx-5.5,hy-3.5,2,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(hx+8.5,hy-3.5,2,0,Math.PI*2); ctx.fill();
+
+  // baby blush
+  ctx.fillStyle='rgba(255,140,120,0.38)';
+  ctx.beginPath(); ctx.ellipse(hx-12,hy+5,6,3.5,0,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(hx+12,hy+5,6,3.5,0,0,Math.PI*2); ctx.fill();
+
+  // open cute mouth + drool
+  ctx.fillStyle='#FF9999';
+  ctx.beginPath(); ctx.arc(hx,hy+9,5,0.1,Math.PI-0.1); ctx.fill();
+  ctx.fillStyle='#FF7777';
+  ctx.beginPath(); ctx.arc(hx,hy+10,3,0,Math.PI); ctx.fill();
+  // drool drop
+  ctx.fillStyle='rgba(180,220,255,0.75)';
+  ctx.beginPath(); ctx.arc(hx+3,hy+16,3,0,Math.PI*2); ctx.fill();
+
+  ctx.restore();
+}
+
+// ── 終點場景繪製 ──
+// drawGoal() 繪製站立胖豬藥師，由後至前依序繪製：
+//   1. 地面陰影
+//   2. 雙腿（高度減半）+ 蹄子
+//   3. 尾巴（從背後捲出）
+//   4. 豬身體（增胖：rx=50，縮短：ry=28）
+//   5. 左臂（垂下）、右臂（舉旗）
+//   6. 藥師白袍（加寬配合胖身，袍身、下擺、V領、翻領、口袋、鈕扣）
+//   7. 旗桿 + 帶「藥」字的三角旗
+//   8. 豬頭（headY 隨身體縮短向下移，外觀不變）
+function drawGoal(){
+  const fx=goal.x-camX; if(fx+goal.w<-50||fx>W+50) return;
+  const gy2=GY;
+  // 豬中心 X；headY = 頭圓心 Y（身體縮短後自然下移）；bodyY = 身體圓心 Y
+  const pgx=fx+90;
+  const bodyY=gy2-58;   // 身體圓心（腿高30+身體ry28=58）
+  const headY=gy2-118;  // 頭圓心（bodyY-ry-head_r = 58+28+32=118）
+
+  // 地面陰影（橢圓投影，隨胖身加寬）
+  ctx.fillStyle='rgba(0,0,0,0.13)';
+  ctx.beginPath(); ctx.ellipse(pgx,gy2-4,50,8,0,0,Math.PI*2); ctx.fill();
+
+  // ── 雙腿（高度減半：30，比原本60更短粗） ──
+  ctx.fillStyle='#E07888';
+  rr(pgx-24,gy2-30,19,30,5);  // 左腿
+  rr(pgx+5,gy2-30,19,30,5);   // 右腿
+
+  // ── 蹄子（腿底橢圓，略寬） ──
+  ctx.fillStyle='#C05868';
+  ctx.beginPath(); ctx.ellipse(pgx-14,gy2-2,14,6,0,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(pgx+14,gy2-2,14,6,0,0,Math.PI*2); ctx.fill();
+
+  // ── 尾巴（位置隨身體縮短調整，保持捲曲感） ──
+  ctx.strokeStyle='#E07888'; ctx.lineWidth=4; ctx.lineCap='round';
+  ctx.beginPath();
+  ctx.moveTo(pgx-47,bodyY+10);
+  ctx.bezierCurveTo(pgx-66,bodyY-2,pgx-72,bodyY+16,pgx-58,bodyY+26);
+  ctx.bezierCurveTo(pgx-48,bodyY+34,pgx-35,bodyY+28,pgx-37,bodyY+20);
+  ctx.stroke();
+
+  // ── 豬身體（增胖：rx 32→50；縮短：ry 56→28） ──
+  ctx.fillStyle='#F4A0B5';
+  ctx.beginPath(); ctx.ellipse(pgx,bodyY,50,28,0,0,Math.PI*2); ctx.fill();
+
+  // ── 左臂（自然垂下，比例隨身體調整） ──
+  ctx.strokeStyle='#E07888'; ctx.lineWidth=13; ctx.lineCap='round';
+  ctx.beginPath();
+  ctx.moveTo(pgx-38,bodyY-12);
+  ctx.quadraticCurveTo(pgx-56,bodyY+6,pgx-54,bodyY+26);
+  ctx.stroke();
+  ctx.fillStyle='#D06878';
+  ctx.beginPath(); ctx.arc(pgx-54,bodyY+28,7,0,Math.PI*2); ctx.fill();
+
+  // ── 右臂（舉起握旗，彎曲向上） ──
+  const armEndX=pgx+58, armEndY=bodyY-52;
+  ctx.strokeStyle='#E07888'; ctx.lineWidth=13; ctx.lineCap='round';
+  ctx.beginPath();
+  ctx.moveTo(pgx+38,bodyY-12);
+  ctx.quadraticCurveTo(pgx+62,bodyY-18,armEndX,armEndY);
+  ctx.stroke();
+  ctx.fillStyle='#D06878';
+  ctx.beginPath(); ctx.arc(armEndX,armEndY,7,0,Math.PI*2); ctx.fill();
+
+  // ══ 藥師白袍（加寬至96px配合rx=50胖身） ══
+  // 袍身主體（圓角矩形，蓋住前胸）
+  ctx.fillStyle='#F0F0F0';
+  rr(pgx-48,bodyY-30,96,60,8);
+  // 袍緣輪廓（淡灰描邊）
+  ctx.strokeStyle='#C8C8C8'; ctx.lineWidth=1.2; ctx.stroke();
+
+  // 袍子下擺（蓋住腿根）
+  ctx.fillStyle='#F0F0F0';
+  rr(pgx-44,gy2-32,88,14,4);
+
+  // V 領開口（露出粉色豬身）
+  ctx.fillStyle='#F4A0B5';
+  ctx.beginPath();
+  ctx.moveTo(pgx,bodyY-28);
+  ctx.lineTo(pgx-14,bodyY-4);
+  ctx.lineTo(pgx+14,bodyY-4);
+  ctx.closePath(); ctx.fill();
+
+  // 翻領左片（稍深灰白）
+  ctx.fillStyle='#E2E2E2';
+  ctx.beginPath();
+  ctx.moveTo(pgx,bodyY-28); ctx.lineTo(pgx-48,bodyY-14);
+  ctx.lineTo(pgx-28,bodyY+4); ctx.lineTo(pgx-8,bodyY-4);
+  ctx.closePath(); ctx.fill();
+  // 翻領右片
+  ctx.beginPath();
+  ctx.moveTo(pgx,bodyY-28); ctx.lineTo(pgx+48,bodyY-14);
+  ctx.lineTo(pgx+28,bodyY+4); ctx.lineTo(pgx+8,bodyY-4);
+  ctx.closePath(); ctx.fill();
+
+  // 胸口袋（左胸，含紅十字醫療符號）
+  ctx.fillStyle='#E8E8E8';
+  rr(pgx-40,bodyY-18,18,14,3);
+  ctx.strokeStyle='#E53935'; ctx.lineWidth=2.5; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(pgx-37,bodyY-11); ctx.lineTo(pgx-26,bodyY-11); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(pgx-32,bodyY-16); ctx.lineTo(pgx-32,bodyY-6);  ctx.stroke();
+
+  // 白袍鈕扣（3顆，沿中線排列）
+  ctx.fillStyle='#A8A8A8';
+  [bodyY-4,bodyY+8,bodyY+18].forEach(by=>{
+    ctx.beginPath(); ctx.arc(pgx,by,2.5,0,Math.PI*2); ctx.fill();
+  });
+
+  // ── 旗桿（從右蹄延伸至頭頂上方） ──
+  const fpx=armEndX+6;
+  const poleTop=headY-80;  // 旗桿頂端（高出豬頭80px）
+  const poleH=gy2-poleTop;
+  ctx.fillStyle='rgba(0,0,0,0.10)'; ctx.fillRect(fpx+4,poleTop,5,poleH); // 陰影
+  ctx.fillStyle='#9E9E9E';          ctx.fillRect(fpx,poleTop,5,poleH);    // 主桿
+  ctx.fillStyle='#E0E0E0';          ctx.fillRect(fpx+1,poleTop,2,poleH);  // 反光
+
+  // 三角旗幟（紅色，向右飄）
+  ctx.fillStyle='#E53935';
+  ctx.beginPath();
+  ctx.moveTo(fpx+5,poleTop+5);
+  ctx.lineTo(fpx+60,poleTop+27);
+  ctx.lineTo(fpx+5,poleTop+50);
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle='#B71C1C'; ctx.lineWidth=1.2; ctx.stroke();
+
+  // 旗面「藥」字（白色粗體，置中於旗面）
+  ctx.save();
+  ctx.fillStyle='#FFFFFF';
+  ctx.font='bold 24px sans-serif';
+  ctx.textAlign='center';
+  ctx.textBaseline='middle';
+  ctx.fillText('藥',fpx+25,poleTop+27);
+  ctx.restore();
+
+  // ── 豬頭（外觀不變，位置隨身體縮短自然下移至 gy2-118） ──
+  ctx.fillStyle='#F4A0B5';
+  ctx.beginPath(); ctx.arc(pgx,headY,32,0,Math.PI*2); ctx.fill();
+
+  // 耳朵（外耳深粉 + 內耳淡粉，三角形朝上）
+  ctx.fillStyle='#E07888';
+  ctx.beginPath(); ctx.moveTo(pgx-18,headY-22); ctx.lineTo(pgx-32,headY-50); ctx.lineTo(pgx-6,headY-28); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(pgx+18,headY-22); ctx.lineTo(pgx+32,headY-50); ctx.lineTo(pgx+6,headY-28); ctx.closePath(); ctx.fill();
+  ctx.fillStyle='#F9C0CC';
+  ctx.beginPath(); ctx.moveTo(pgx-16,headY-25); ctx.lineTo(pgx-26,headY-44); ctx.lineTo(pgx-8,headY-28); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(pgx+16,headY-25); ctx.lineTo(pgx+26,headY-44); ctx.lineTo(pgx+8,headY-28); ctx.closePath(); ctx.fill();
+
+  // 鼻子（橢圓正面豬鼻 + 兩個鼻孔）
+  ctx.fillStyle='#E07888';
+  ctx.beginPath(); ctx.ellipse(pgx,headY+14,16,11,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#B03050';
+  ctx.beginPath(); ctx.arc(pgx-7,headY+15,4,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(pgx+7,headY+15,4,0,Math.PI*2); ctx.fill();
+
+  // 眼睛（黑色瞳孔 + 白色高光點）
+  ctx.fillStyle='#2D1010';
+  ctx.beginPath(); ctx.arc(pgx-13,headY-4,6,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(pgx+13,headY-4,6,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='white';
+  ctx.beginPath(); ctx.arc(pgx-11,headY-7,2.2,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(pgx+15,headY-7,2.2,0,Math.PI*2); ctx.fill();
+}
+
+// ── 粒子特效繪製 ──
+// 每顆粒子以 4px 半徑圓形繪製，透明度隨 life 線性遞減（life/28），
+// 製造淡出消失的效果。繪製後務必將 globalAlpha 還原為 1。
+function drawParticles(){
+  particles.forEach(p=>{
+    ctx.globalAlpha=p.life/28; // life 越小越透明
+    ctx.fillStyle=p.color;
+    ctx.beginPath(); ctx.arc(p.x-camX,p.y,4,0,Math.PI*2); ctx.fill();
+  });
+  ctx.globalAlpha=1; // 還原全域透明度
+}
+
+// ══ Q版主角繪製 ══
+// drawChar() 繪製主角的完整外觀，由後至前：
+//   後背頭髮（長髮）→ 外套身體 → 手臂 → 腿部 → 頭部（含髮型與臉）
+//
+// 動畫系統：
+//   swing  : 行走擺動幅度（sin 函數，在地面且有速度時啟用）
+//   isJump : 跳躍狀態（手臂向後仰，腿部不擺動）
+//   invTimer : 無敵閃爍（每 6 幀交替顯示/隱藏）
+function drawChar(){
+  const p=player;
+  // sx：角色中心屏幕 x；sy：碰撞箱頂部屏幕 y（= 頭頂）
+  const sx=p.x-camX+PW/2, sy=p.y;
+  const isJump=!p.onGround;
+  // swing：行走時腿/臂的左右擺動量（-7 ~ +7 px）
+  const swing=(p.onGround&&Math.abs(p.vx)>0.4)?Math.sin(p.wFrame*0.42)*7:0;
+  // 無敵期間每 6 幀閃爍一次（跳過偶數組的繪製）
+  if(p.invTimer>0&&Math.floor(p.invTimer/6)%2===0) return;
+
+  ctx.save();
+  // 朝左時水平翻轉整個角色（以 sx 為軸鏡像）
+  if(p.facing===-1){ ctx.translate(sx*2,0); ctx.scale(-1,1); }
+
+  // ── 後背長髮 ──（繪製在身體最底層，呈現髮絲向下飄的效果）
+  ctx.fillStyle='#241509';
+  ctx.beginPath();
+  ctx.moveTo(sx-18,sy+16);
+  ctx.bezierCurveTo(sx-42,sy+35,sx-38,sy+54,sx-22,sy+59);
+  ctx.bezierCurveTo(sx-16,sy+61,sx-10,sy+57,sx-14,sy+52);
+  ctx.bezierCurveTo(sx-26,sy+47,sx-26,sy+30,sx-20,sy+20);
+  ctx.closePath(); ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(sx+18,sy+16);
+  ctx.bezierCurveTo(sx+42,sy+35,sx+38,sy+54,sx+22,sy+59);
+  ctx.bezierCurveTo(sx+16,sy+61,sx+10,sy+57,sx+14,sy+52);
+  ctx.bezierCurveTo(sx+26,sy+47,sx+26,sy+30,sx+20,sy+20);
+  ctx.closePath(); ctx.fill();
+
+  // ── 外套軀幹 ──（圓角矩形 + 領口暗色三角形 + 中線 + 鈕扣）
+  ctx.fillStyle='#C49148'; rr(sx-15,sy+47,30,17,7);
+  ctx.fillStyle='#AD7A33';
+  ctx.beginPath();
+  ctx.moveTo(sx-10,sy+48); ctx.lineTo(sx-4,sy+54);
+  ctx.lineTo(sx,sy+51); ctx.lineTo(sx+4,sy+54);
+  ctx.lineTo(sx+10,sy+48); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle='#999'; ctx.lineWidth=1.2;
+  ctx.beginPath(); ctx.moveTo(sx,sy+51); ctx.lineTo(sx,sy+63); ctx.stroke();
+  ctx.fillStyle='#bbb'; ctx.beginPath(); ctx.arc(sx,sy+57,1.5,0,Math.PI*2); ctx.fill();
+
+  // ── 手臂 ──
+  // armSw：手臂旋轉角度（跳躍時固定後仰 -0.4 rad；行走時隨 swing 微幅擺動）
+  const armSw=isJump?-0.4:swing*0.018;
+  ctx.save(); ctx.translate(sx-17,sy+51); ctx.rotate(-armSw);
+  ctx.fillStyle='#C49148'; ctx.beginPath(); ctx.ellipse(0,5,6,6,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#F2C4A0'; ctx.beginPath(); ctx.arc(0,11,4,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+  ctx.save(); ctx.translate(sx+17,sy+51); ctx.rotate(armSw);
+  ctx.fillStyle='#C49148'; ctx.beginPath(); ctx.ellipse(0,5,6,6,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#F2C4A0'; ctx.beginPath(); ctx.arc(0,11,4,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+
+  // ── 腿部與鞋子 ──
+  // ls：腿部擺動量（跳躍時歸零，行走時 = swing）
+  // 左腿 -ls*0.5、右腿 +ls*0.5 製造交替擺動效果
+  const ls=isJump?0:swing;
+  ctx.fillStyle='#3A2510';
+  rr(sx-13,sy+63-ls*0.5,11,9,3); rr(sx+2,sy+63+ls*0.5,11,9,3);
+  ctx.fillStyle='#1c0d04';
+  ctx.beginPath(); ctx.ellipse(sx-8,sy+72-ls*0.5,9,4,0.1,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(sx+8,sy+72+ls*0.5,9,4,-0.1,0,Math.PI*2); ctx.fill();
+
+  // ── 頭部繪製 ──
+  // 頭部由後至前：底色膚色圓 → 髮冠（上半弧）→ 瀏海貝茲曲線 → 下臉補色 → 臉部（照片或預設繪製）
+  // hcx / hcy : 頭部圓心螢幕座標；hr : 頭部半徑（23px）
+  const hcx=sx, hcy=sy+23, hr=23;
+
+  // head base skin
+  ctx.fillStyle='#FAD9B5';
+  ctx.beginPath(); ctx.arc(hcx,hcy,hr,0,Math.PI*2); ctx.fill();
+
+  // hair crown
+  ctx.fillStyle='#241509';
+  ctx.beginPath(); ctx.arc(hcx,hcy-2,hr+1.5,Math.PI*1.1,Math.PI*1.9); ctx.fill();
+
+  // bangs
+  ctx.fillStyle='#241509';
+  ctx.beginPath();
+  ctx.moveTo(hcx-hr,hcy-6);
+  ctx.bezierCurveTo(hcx-hr+1,hcy-22, hcx-8,hcy-17, hcx-1,hcy-10);
+  ctx.bezierCurveTo(hcx+3,hcy-14, hcx+hr-4,hcy-21, hcx+hr,hcy-6);
+  ctx.quadraticCurveTo(hcx+hr-1,hcy-3, hcx+21,hcy-2);
+  ctx.quadraticCurveTo(hcx+10,hcy-12, hcx+3,hcy-8);
+  ctx.quadraticCurveTo(hcx-6,hcy-12, hcx-21,hcy-2);
+  ctx.quadraticCurveTo(hcx-hr+1,hcy-3, hcx-hr,hcy-6);
+  ctx.closePath(); ctx.fill();
+
+  // lower face re-draw
+  ctx.fillStyle='#FAD9B5';
+  ctx.beginPath(); ctx.ellipse(hcx,hcy+4,hr-1,hr-3,0,0,Math.PI); ctx.fill();
+
+  // ── 臉部：照片模式 vs 預設繪製模式 ──
+  if(faceImg){
+    ctx.save();
+    // 以略小於頭部的圓形做裁切（clip），防止照片超出頭部輪廓
+    ctx.beginPath(); ctx.arc(hcx,hcy+4,hr-3,0,Math.PI*2); ctx.clip();
+    // 從照片頂部中央裁取正方形區域（對應自拍臉部位置）
+    const iw=faceImg.width, ih=faceImg.height;
+    const cropW=iw;
+    const cropH=Math.min(ih,iw*1.1); // slightly taller than square to get chin
+    const cropX=0;
+    const cropY=0; // from top
+    const drawR=(hr-3);
+    ctx.drawImage(faceImg, cropX,cropY,cropW,cropH,
+                           hcx-drawR, hcy+4-drawR, drawR*2, drawR*2);
+    // soft vignette edge
+    const vigG=ctx.createRadialGradient(hcx,hcy+4,drawR*0.65,hcx,hcy+4,drawR);
+    vigG.addColorStop(0,'rgba(0,0,0,0)');
+    vigG.addColorStop(1,'rgba(0,0,0,0.18)');
+    ctx.fillStyle=vigG; ctx.fillRect(hcx-drawR,hcy+4-drawR,drawR*2,drawR*2);
+    ctx.restore();
+  } else {
+    // default drawn face
+    ctx.fillStyle='#16090A';
+    ctx.beginPath(); ctx.ellipse(hcx-9,hcy+4,5.5,6.5,0,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(hcx+9,hcy+4,5.5,6.5,0,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='white';
+    ctx.beginPath(); ctx.arc(hcx-7.5,hcy+1,2.5,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(hcx+10.5,hcy+1,2.5,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='rgba(255,130,130,0.32)';
+    ctx.beginPath(); ctx.ellipse(hcx-16,hcy+11,7,4,-0.1,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(hcx+16,hcy+11,7,4, 0.1,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#E8A090'; ctx.beginPath(); ctx.arc(hcx,hcy+14,1.8,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle='#C06070'; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.arc(hcx,hcy+18,5,0.2,Math.PI-0.2); ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+// ── 覆蓋畫面繪製 ──
+// drawOverlay() 在主場景之上繪製半透明遮罩與文字，
+// 分三種狀態：start（開始說明）、win（過關）、gameover（遊戲結束）。
+// 非 playing 時直接 return 以減少不必要的繪製。
+function drawOverlay(){
+  if(gameState==='start'){
+    ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(0,0,W,H);
+    ctx.textAlign='center';
+    // ── 冒險逃脫標題 "Rabee's Big Escape" ──
+    ctx.save();
+    ctx.textAlign='center';
+    ctx.font='bold italic 64px Impact,"Arial Black",Arial';
+
+    // 最底層：深藍描邊（圓角，卡通輪廓線）
+    ctx.strokeStyle='#0a1040';
+    ctx.lineWidth=14;
+    ctx.lineJoin='round';
+    ctx.strokeText("Rabee's Big Escape",W/2,148);
+
+    // 深色陰影（右下偏移，厚重立體感）
+    ctx.fillStyle='rgba(10,20,80,0.80)';
+    ctx.fillText("Rabee's Big Escape",W/2+5,154);
+
+    // 主體：鮮亮橙色（活力動感）
+    ctx.fillStyle='#FF7700';
+    ctx.fillText("Rabee's Big Escape",W/2,148);
+
+    // 頂部高光漸層（金黃光澤，由上往下淡出）
+    const tg=ctx.createLinearGradient(0,98,0,152);
+    tg.addColorStop(0,'rgba(255,240,80,0.70)');
+    tg.addColorStop(1,'rgba(255,160,0,0)');
+    ctx.fillStyle=tg;
+    ctx.fillText("Rabee's Big Escape",W/2,148);
+
+    // 裝飾：金色四角星閃光（散布於標題四周，強調冒險感）
+    // 四角星以兩個交叉橢圓繪製（垂直細長 + 水平細長）
+    const stars=[
+      {x:W/2-230,y:118,r:9 },{x:W/2-180,y:158,r:6},
+      {x:W/2-105,y:108,r:11},{x:W/2-30, y:160,r:6},
+      {x:W/2+55,  y:106,r:10},{x:W/2+125,y:158,r:6},
+      {x:W/2+195, y:115,r:8 },{x:W/2+242,y:150,r:6},
+    ];
+    stars.forEach(s=>{
+      // 外層：金色
+      ctx.fillStyle='#FFD700';
+      ctx.save(); ctx.translate(s.x,s.y);
+      ctx.beginPath(); ctx.ellipse(0,0,s.r*0.22,s.r,0,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(0,0,s.r,s.r*0.22,0,0,Math.PI*2); ctx.fill();
+      // 中心亮點：白色
+      ctx.fillStyle='rgba(255,255,255,0.85)';
+      ctx.beginPath(); ctx.arc(0,0,s.r*0.22,0,Math.PI*2); ctx.fill();
+      ctx.restore();
+    });
+    // 散落小金點（增加閃爍質感）
+    ctx.fillStyle='rgba(255,220,80,0.75)';
+    [{x:W/2-210,y:140},{x:W/2+168,y:136},{x:W/2-72,y:102},{x:W/2+88,y:163}].forEach(p=>{
+      ctx.beginPath(); ctx.arc(p.x,p.y,3.5,0,Math.PI*2); ctx.fill();
+    });
+    ctx.restore();
+    ctx.fillStyle='white'; ctx.font='20px Microsoft JhengHei,Arial';
+<!--    ctx.fillText('← → 移動    Space鍵 跳躍',W/2,220);-->
+<!--    ctx.fillText('小心蝦蛆寶！',W/2,255);-->
+<!--    ctx.fillText('收集所有金幣，抵達終點旗幟',W/2,290);-->
+    ctx.fillStyle='#FFE082'; ctx.font='16px Microsoft JhengHei,Arial';
+<!--    ctx.fillText('⚠️ 空中也會隨機掉落嬰兒，小心！',W/2,340); -->
+        ctx.fillText('Vol.1 前往豬藥局！',W/2,255);
+    ctx.fillStyle='#B2EBF2'; ctx.font='bold 24px Microsoft JhengHei,Arial';
+    ctx.fillText('← → 移動   Space 跳躍',W/2,400);
+    ctx.fillText('Enter 開始遊戲',W/2,435);
+    return;
+  }
+  if(gameState==='win'){
+    ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(0,0,W,H);
+    ctx.textAlign='center';
+    ctx.fillStyle='#FFD700'; ctx.font='bold 56px Microsoft JhengHei,Arial';
+    ctx.fillText('🎉 恭喜過關！',W/2,165);
+    ctx.fillStyle='white'; ctx.font='bold 27px Microsoft JhengHei,Arial';
+    ctx.fillText('最終分數：'+score,W/2,245);
+    ctx.fillText('收集金幣：'+coinsCnt+' / '+TOTAL_COINS,W/2,290);
+    ctx.fillStyle='#B2EBF2'; ctx.font='20px Microsoft JhengHei,Arial';
+    ctx.fillText('按 R 重新開始',W/2,360);
+    return;
+  }
+  if(gameState==='gameover'){
+    ctx.fillStyle='rgba(0,0,0,0.65)'; ctx.fillRect(0,0,W,H);
+    ctx.textAlign='center';
+    ctx.fillStyle='#FF5252'; ctx.font='bold 58px Microsoft JhengHei,Arial';
+    ctx.fillText('遊戲結束',W/2,175);
+    ctx.fillStyle='white'; ctx.font='bold 27px Microsoft JhengHei,Arial';
+    ctx.fillText('分數：'+score,W/2,255);
+    ctx.fillText('金幣：'+coinsCnt+' / '+TOTAL_COINS,W/2,298);
+    ctx.fillStyle='#FFCDD2'; ctx.font='20px Microsoft JhengHei,Arial';
+    ctx.fillText('按 R 重新開始',W/2,365);
+    return;
+  }
+}
+
+// resetGame()：按 R 鍵觸發，將所有遊戲狀態完全重置：
+//   - 分數/生命/金幣數歸零、狀態切回 playing
+//   - 攝影機歸位、粒子清空、天降計時器重置
+//   - 從 coinDefs / babyDefs 重新生成活躍的金幣與敵人物件
+//   - 重建主角物件並重新整合 UI
+function resetGame(){
+  score=0; lives=4; coinsCnt=0; gameState='playing'; camX=0; particles=[];
+  skyTimer=0;
+  // 從定義陣列映射出帶有動態狀態的物件（展開語法複製避免污染原始定義）
+  coins=coinDefs.map((c,i)=>({...c,id:i,got:false}));
+  enemies=babyDefs.map(e=>({...e,vy:0,alive:true,ct:0,falling:false}));
+  player=mkPlayer(); updateUI();
+  document.getElementById('pg').textContent='0%';
+}
+
+// ══ 主迴圈 ══
+// loop() 由瀏覽器 requestAnimationFrame 每幀（≈60fps）自動呼叫。
+// 繪製順序（由遠至近，確保正確的疊層關係）：
+//   1. 清除畫布
+//   2. 背景（天空、山、雲）
+//   3. 平台（地面、跳台）
+//   4. 終點場景（圍欄、豬、旗幟）
+//   5. 金幣
+//   6. 嬰兒敵人（全部）
+//   7. 主角（playing/win/gameover 均顯示，讓玩家看到最終姿態）
+//   8. 粒子特效
+//   9. 覆蓋畫面（start/win/gameover 文字）
+//  10. 物理/邏輯更新（僅 playing 狀態）
+//  11. 排程下一幀
+function loop(){
+  ctx.clearRect(0,0,W,H); // 清除整個畫布
+  drawBg(); drawPlatforms(); drawGoal(); drawCoins();
+  enemies.forEach(e=>drawBaby(e));
+  if(gameState==='playing'||gameState==='win'||gameState==='gameover') drawChar();
+  drawParticles(); drawOverlay();
+  if(gameState==='playing') update(); // 遊戲邏輯僅在 playing 時執行
+  requestAnimationFrame(loop); // 排程下一幀
+}
+
+// ── 遊戲啟動（Boot）──
+// 在所有定義完成後執行一次初始化，然後啟動主迴圈。
+// 這段程式碼只在頁面載入時執行一次（之後由 resetGame() 重置）。
+coins   = coinDefs.map((c,i)=>({...c,id:i,got:false})); // 初始化金幣
+enemies = babyDefs.map(e=>({...e,vy:0,alive:true,ct:0,falling:false})); // 初始化敵人
+player  = mkPlayer(); // 建立主角
+updateUI();  // 更新 HTML UI 顯示初始數值
+loop();      // 啟動主迴圈
+</script>
+</body>
+</html>
